@@ -1,8 +1,0 @@
-services:
-  - type: web
-    name: telegram-selenium-bot
-    env: python
-    buildCommand: "pip install -r requirements.txt"
-    startCommand: "python bot.py"
-    disk:
-      size: 1GB
