@@ -5,6 +5,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
 import time
 import random
+import asyncio
 
 # TELEGRAM BOT CONFIG
 TOKEN = "7118239951:AAHN8AkMRvscPXFDmHRLVcDyL8o-5yJJuBY"
@@ -98,6 +99,13 @@ async def main():
     # Run the bot
     await application.run_polling()
 
+# If already inside an asynchronous environment, run main without asyncio.run
 if __name__ == "__main__":
-    import asyncio
-    asyncio.run(main())
+    import sys
+    if sys.stdout.isatty():
+        asyncio.run(main())
+    else:
+        # Use this when running in environments like Render or others where the loop is running
+        loop = asyncio.get_event_loop()
+        loop.create_task(main())
+        loop.run_forever()
