@@ -5,7 +5,7 @@ import json
 import os
 from flask import Flask, request
 from telegram import Update, Bot
-from telegram.ext import Updater, CommandHandler, CallbackContext
+from telegram.ext import Application, CommandHandler, CallbackContext
 
 # Telegram Bot Token (Set this in Render Environment Variables)
 TOKEN = "7118239951:AAHN8AkMRvscPXFDmHRLVcDyL8o-5yJJuBY"
@@ -47,7 +47,6 @@ def send_request(name, url, data=None, method="POST"):
     
     bot.send_message(chat_id=CHAT_ID, text=f"[✔] {name} Response:\n{formatted_response}")
 
-
 def countdown(seconds, message):
     """Countdown timer with Telegram notifications."""
     while seconds > 0 and running:
@@ -55,7 +54,6 @@ def countdown(seconds, message):
         time.sleep(10)
         seconds -= 10
     bot.send_message(chat_id=CHAT_ID, text="[✅] Continuing...")
-
 
 def process_loop():
     """Main process loop."""
@@ -75,51 +73,44 @@ def process_loop():
         
         counter += 1
 
-
-def start(update: Update, context: CallbackContext):
+async def start(update: Update, context: CallbackContext):
     """Start the process loop."""
     global running
     if not running:
         running = True
         threading.Thread(target=process_loop).start()
-        update.message.reply_text("✅ Bot Started!")
+        await update.message.reply_text("✅ Bot Started!")
     else:
-        update.message.reply_text("⚠️ Already Running!")
+        await update.message.reply_text("⚠️ Already Running!")
 
-
-def stop(update: Update, context: CallbackContext):
+async def stop(update: Update, context: CallbackContext):
     """Stop the process loop."""
     global running
     running = False
-    update.message.reply_text("🛑 Bot Stopped!")
+    await update.message.reply_text("🛑 Bot Stopped!")
 
-
-def set_verification(update: Update, context: CallbackContext):
+async def set_verification(update: Update, context: CallbackContext):
     """Set verification codes."""
     if len(context.args) < 2:
-        update.message.reply_text("⚠️ Usage: /setver <create|cycle|end> <code>")
+        await update.message.reply_text("⚠️ Usage: /setver <create|cycle|end> <code>")
         return
     
     key, value = context.args[0], context.args[1]
     if key in verification_codes:
         verification_codes[key] = value
-        update.message.reply_text(f"✅ Updated {key} verification code!")
+        await update.message.reply_text(f"✅ Updated {key} verification code!")
     else:
-        update.message.reply_text("⚠️ Invalid key! Use: create, cycle, or end.")
-
+        await update.message.reply_text("⚠️ Invalid key! Use: create, cycle, or end.")
 
 def main():
     """Main function to start the Telegram bot."""
-    updater = Updater(TOKEN, use_context=True)
-    dp = updater.dispatcher
-    
-    dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(CommandHandler("stop", stop))
-    dp.add_handler(CommandHandler("setver", set_verification))
-    
-    updater.start_polling()
-    updater.idle()
+    app = Application.builder().token(TOKEN).build()
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("stop", stop))
+    app.add_handler(CommandHandler("setver", set_verification))
+
+    app.run_polling()
 
 if __name__ == "__main__":
     main()
-        
