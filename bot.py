@@ -4,8 +4,8 @@ import time
 import threading
 import os
 from flask import Flask, request
-from telegram import Update, Bot
-from telegram.ext import Updater, CommandHandler, CallbackContext
+from telegram import Update
+from telegram.ext import Application, CommandHandler, CallbackContext
 
 # ---------------------- CONFIGURATION ----------------------
 
@@ -36,7 +36,8 @@ users = load_users()
 
 # ---------------------- TELEGRAM BOT FUNCTIONS ----------------------
 
-bot = Bot(token=TOKEN)
+application = Application.builder().token(TOKEN).build()  # Updated Application initialization
+
 running_cycles = {}
 
 def send_request(name, url, data=None, method="POST"):
@@ -124,10 +125,10 @@ def run_cycle(user_id):
         reward_data = {"verificationCode": users[user_id]["cycle"]}
         reward_response = send_request("Get Cycle Ads Reward", reward_url, reward_data)
 
-        bot.send_message(chat_id=user_id, text=f"✔ Get Cycle Ads Reward Response:\n{reward_response}")
+        application.bot.send_message(chat_id=user_id, text=f"✔ Get Cycle Ads Reward Response:\n{reward_response}")
         time.sleep(30 + (time.time() % 30))  # Random 30-60s delay
 
-    bot.send_message(chat_id=user_id, text="🛑 Cycle stopped.")
+    application.bot.send_message(chat_id=user_id, text="🛑 Cycle stopped.")
 
 def process_cycle(update: Update, context: CallbackContext):
     """Start the cycle for the user."""
@@ -147,7 +148,7 @@ def process_cycle(update: Update, context: CallbackContext):
     create_url = f"{BASE_URL}/createNewSession"
     create_data = {"verificationCode": users[user_id]["create"]}
     create_response = send_request("Create New Session", create_url, create_data)
-    bot.send_message(chat_id=user_id, text=f"✔ Create New Session Response:\n{create_response}")
+    application.bot.send_message(chat_id=user_id, text=f"✔ Create New Session Response:\n{create_response}")
 
     # Start looping for Cycle Reward
     running_cycles[user_id] = True
@@ -170,36 +171,36 @@ def kill_cycle(update: Update, context: CallbackContext):
     end_url = f"{BASE_URL}/endActiveSession"
     end_data = {"verificationCode": users[user_id]["end"]}
     end_response = send_request("End Session", end_url, end_data)
-    bot.send_message(chat_id=user_id, text=f"✔ End Session Response:\n{end_response}")
+    application.bot.send_message(chat_id=user_id, text=f"✔ End Session Response:\n{end_response}")
 
     update.message.reply_text("✅ Cycle stopped successfully!")
+
+# ---------------------- FLASK WEBHOOK ----------------------
+
+@app.route('/jhai/bot.py', methods=['POST'])
+def telegram_webhook():
+    """Handle the incoming webhook request from Telegram."""
+    print("Webhook request received")  # Log the incoming request
+    try:
+        json_str = request.get_data().decode('UTF-8')
+        update = Update.de_json(json.loads(json_str), application.bot)
+        application.dispatcher.process_update(update)
+        return 'OK', 200
+    except Exception as e:
+        print(f"Error: {e}")
+        return 'Error', 500
 
 # ---------------------- TELEGRAM BOT INITIALIZATION ----------------------
 
 def main():
     """Start the bot."""
-    updater = Updater(TOKEN, use_context=True)
-    dp = updater.dispatcher
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("setver", set_verification))
+    application.add_handler(CommandHandler("chkver", chk_verification))
+    application.add_handler(CommandHandler("run", process_cycle))
+    application.add_handler(CommandHandler("kill", kill_cycle))
 
-    dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(CommandHandler("setver", set_verification))
-    dp.add_handler(CommandHandler("chkver", chk_verification))
-    dp.add_handler(CommandHandler("run", process_cycle))
-    dp.add_handler(CommandHandler("kill", kill_cycle))
-
-    updater.start_polling()
-    updater.idle()
-
-# ---------------------- FLASK ROUTE FOR WEBHOOK ----------------------
-
-@app.route('/jhai/bot.py', methods=['POST'])
-def telegram_webhook():
-    """Handle the incoming webhook request from Telegram."""
-    json_str = request.get_data().decode('UTF-8')
-    update = Update.de_json(json.loads(json_str), bot)
-    # Process the update here, handling the incoming message
-    updater.dispatcher.process_update(update)
-    return 'OK', 200
+    application.run_polling()
 
 # ---------------------- RUN SCRIPT ----------------------
 
