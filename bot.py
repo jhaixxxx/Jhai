@@ -1,119 +1,125 @@
 import requests
 import time
-import json
 import threading
-from flask import Flask, jsonify
+import json
+import os
+from flask import Flask, request
+from telegram import Update, Bot
+from telegram.ext import Updater, CommandHandler, CallbackContext
 
-app = Flask(__name__)
+# Telegram Bot Token (Set this in Render Environment Variables)
+TOKEN = os.getenv("7881208281:AAEusLTzYoSuA45DWJCJ7lIxyzZ_HroLF9Q")
+CHAT_ID = os.getenv("6735321947")
 
-# Base URL
-base_url = "https://boats-app-cba6ae7713ab.herokuapp.com"
+# Base URL for API Requests
+BASE_URL = "https://boats-app-cba6ae7713ab.herokuapp.com"
 
-# Common headers
-headers = {
-    "currency": "USD",
-    "Connection": "close",
-    "rentappsetup": "true",
-    "version": "2.7",
-    "language": "English",
-    "packageName": "com.boat.app.adventure",
-    "versionCode": "27",
-    "storeType": "google_play",
-    "authcode": "g5relk8:g9>",
-    "Content-Type": "application/json; charset=utf-8",
-    "Accept-Encoding": "gzip",
-    "User-Agent": "okhttp/5.0.0-alpha.14"
+# Default verification codes (Configurable via Telegram)
+verification_codes = {
+    "create": "default_create_code",
+    "cycle": "default_cycle_code",
+    "end": "default_end_code"
 }
 
-# Logs storage
-logs = []
+# Bot instance
+bot = Bot(token=TOKEN)
+
+# Flask app for webhook support
+app = Flask(__name__)
+
+# Running flag
 running = False
 
 def send_request(name, url, data=None, method="POST"):
-    """Send a request and format response."""
-    log(f"🔄 Sending {method} request to {name}...")
-
-    # Send request
+    """Helper function to send HTTP requests."""
+    bot.send_message(chat_id=CHAT_ID, text=f"[🔄] Sending {name} request...")
+    
     if method == "POST":
-        response = requests.post(url, headers=headers, json=data)
+        response = requests.post(url, json=data)
     else:
-        response = requests.get(url, headers=headers)
-
-    # Format response
+        response = requests.get(url)
+    
     try:
-        response_json = response.json()  # Parse JSON response
+        response_json = response.json()
         formatted_response = json.dumps(response_json, indent=4)
     except json.JSONDecodeError:
-        formatted_response = response.text  # Raw text if not JSON
+        formatted_response = response.text
+    
+    bot.send_message(chat_id=CHAT_ID, text=f"[✔] {name} Response:\n{formatted_response}")
 
-    log(f"✔ {name} - Status: {response.status_code}")
-    log(f"📩 Response:\n{formatted_response}")
 
 def countdown(seconds, message):
-    """Countdown timer with logging."""
-    for remaining in range(seconds, 0, -1):
-        log(f"⏳ {message} in {remaining}s...")
-        time.sleep(1)
+    """Countdown timer with Telegram notifications."""
+    while seconds > 0 and running:
+        bot.send_message(chat_id=CHAT_ID, text=f"⏳ {message} in {seconds}s...")
+        time.sleep(10)
+        seconds -= 10
+    bot.send_message(chat_id=CHAT_ID, text="[✅] Continuing...")
 
-def log(message):
-    """Store logs and limit to last 50 messages."""
-    logs.append(message)
-    if len(logs) > 50:
-        logs.pop(0)
-    print(message)  # For Render logs
 
 def process_loop():
-    """Main processing loop that runs indefinitely."""
+    """Main process loop."""
     global running
     counter = 1
+    
     while running:
-        log(f"\n======== [ 🔄 Cycle {counter} ] ========")
-
-        # Step 1: Create New Session
-        create_session_data = {
-            "verificationCode": "5a52eb89e0208ead2c23809a536a876a5c06d3e446d4fa13466afac52b1fd026cba3b08ad5796791021c91b120cedc2b71ce94faf1edc631739ef5ccac5af7fc"
-        }
-        send_request("Create New Session", f"{base_url}/createNewSession", create_session_data)
-
-        # Wait 60 seconds
+        bot.send_message(chat_id=CHAT_ID, text=f"🔄 Cycle {counter} Starting...")
+        
+        send_request("Create New Session", f"{BASE_URL}/createNewSession", {"verificationCode": verification_codes["create"]})
         countdown(60, "Waiting after Create Session")
-
-        # Step 2: Get Cycle Ads Reward
-        reward_data = {
-            "verificationCode": "5a52eb89e0208ead2c23809a536a876a5c06d3e446d4fa13466afac52b1fd026cba3b08ad5796791021c91b120cedc2b85b8018ca51c680a99bbd26680f4217c"
-        }
-        send_request("Get Cycle Ads Reward", f"{base_url}/getCycleAdsReward", reward_data)
-
-        # Wait 30 seconds
+        
+        send_request("Get Cycle Ads Reward", f"{BASE_URL}/getCycleAdsReward", {"verificationCode": verification_codes["cycle"]})
         countdown(30, "Waiting after Get Cycle Ads Reward")
-
-        # Step 3: End Session
-        send_request("End Session", f"{base_url}/endActiveSession", method="GET")
-
+        
+        send_request("End Session", f"{BASE_URL}/endActiveSession", method="GET")
+        
         counter += 1
 
-@app.route("/start", methods=["GET"])
-def start():
+
+def start(update: Update, context: CallbackContext):
     """Start the process loop."""
     global running
     if not running:
         running = True
-        thread = threading.Thread(target=process_loop)
-        thread.start()
-        return jsonify({"status": "Started processing loop"}), 200
-    return jsonify({"status": "Already running"}), 400
+        threading.Thread(target=process_loop).start()
+        update.message.reply_text("✅ Bot Started!")
+    else:
+        update.message.reply_text("⚠️ Already Running!")
 
-@app.route("/stop", methods=["GET"])
-def stop():
+
+def stop(update: Update, context: CallbackContext):
     """Stop the process loop."""
     global running
     running = False
-    return jsonify({"status": "Stopped processing loop"}), 200
+    update.message.reply_text("🛑 Bot Stopped!")
 
-@app.route("/logs", methods=["GET"])
-def get_logs():
-    """Fetch the last 50 logs."""
-    return jsonify({"logs": logs}), 200
+
+def set_verification(update: Update, context: CallbackContext):
+    """Set verification codes."""
+    if len(context.args) < 2:
+        update.message.reply_text("⚠️ Usage: /setver <create|cycle|end> <code>")
+        return
+    
+    key, value = context.args[0], context.args[1]
+    if key in verification_codes:
+        verification_codes[key] = value
+        update.message.reply_text(f"✅ Updated {key} verification code!")
+    else:
+        update.message.reply_text("⚠️ Invalid key! Use: create, cycle, or end.")
+
+
+def main():
+    """Main function to start the Telegram bot."""
+    updater = Updater(TOKEN, use_context=True)
+    dp = updater.dispatcher
+    
+    dp.add_handler(CommandHandler("start", start))
+    dp.add_handler(CommandHandler("stop", stop))
+    dp.add_handler(CommandHandler("setver", set_verification))
+    
+    updater.start_polling()
+    updater.idle()
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000)
+    main()
+        
