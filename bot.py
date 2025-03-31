@@ -8,7 +8,7 @@ from telegram import Update, Bot
 from telegram.ext import Updater, CommandHandler, CallbackContext
 
 # Telegram Bot Token (Set this in Render Environment Variables)
-TOKEN = os.getenv("7881208281:AAEusLTzYoSuA45DWJCJ7lIxyzZ_HroLF9Q")
+TOKEN = os.getenv("7881208281:AAGqVley6ceAVQWOnlORrpxnBVj0uKnc1rQ")
 CHAT_ID = os.getenv("6735321947")
 
 # Base URL for API Requests
