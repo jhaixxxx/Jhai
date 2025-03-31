@@ -13,7 +13,7 @@ TOKEN = "7881208281:AAEFwl96PGwKcO2sSuSPES8yAZ4SxC6OrrA"  # Replace with your bo
 BASE_URL = "https://boats-app-cba6ae7713ab.herokuapp.com"
 
 DATA_FILE = "users.json"
-ALLOWED_USERS = ["6735321947","2120592843"]  # Replace with allowed Telegram user IDs
+ALLOWED_USERS = ["6735321947", "2120592843"]  # Replace with allowed Telegram user IDs
 
 # Initialize Flask app (needed for Pydroid)
 app = Flask(__name__)
@@ -189,6 +189,17 @@ def main():
 
     updater.start_polling()
     updater.idle()
+
+# ---------------------- FLASK ROUTE FOR WEBHOOK ----------------------
+
+@app.route('/jhai/bot.py', methods=['POST'])
+def telegram_webhook():
+    """Handle the incoming webhook request from Telegram."""
+    json_str = request.get_data().decode('UTF-8')
+    update = Update.de_json(json.loads(json_str), bot)
+    # Process the update here, handling the incoming message
+    updater.dispatcher.process_update(update)
+    return 'OK', 200
 
 # ---------------------- RUN SCRIPT ----------------------
 
