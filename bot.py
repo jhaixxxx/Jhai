@@ -9,10 +9,7 @@ from telegram import Update, Bot
 from telegram.ext import Application, CommandHandler, CallbackContext
 
 # Telegram Bot Token
-TOKEN = "7881208281:AAHVDGWvw5vhMo3FeYkitHnzZ8trEZd1nfE"
-
-# Telegram Chat ID (for updates)
-CHAT_ID = None  # Set this to None so all users can use the bot
+TOKEN = "7881208281:AAE9CQmWBtL5g9U6gioor2jzttqzM3w6fAU"
 
 # Base URL for API Requests
 BASE_URL = "https://boats-app-cba6ae7713ab.herokuapp.com"
@@ -23,6 +20,9 @@ verification_codes = {
     "cycle": "default_cycle_code",
     "end": "default_end_code"
 }
+
+# Chat tracking
+active_chats = set()  # Stores active user chat IDs
 
 # Bot instance
 bot = Bot(token=TOKEN)
@@ -35,8 +35,9 @@ running = False
 
 
 async def send_request(name, url, data=None, method="POST"):
-    """Helper function to send HTTP requests."""
-    await bot.send_message(chat_id=CHAT_ID, text=f"🔄 Sending {name} request...")
+    """Helper function to send HTTP requests to all active users."""
+    for chat_id in active_chats:
+        await bot.send_message(chat_id=chat_id, text=f"🔄 Sending {name} request...")
 
     if method == "POST":
         response = requests.post(url, json=data)
@@ -49,16 +50,19 @@ async def send_request(name, url, data=None, method="POST"):
     except json.JSONDecodeError:
         formatted_response = response.text
 
-    await bot.send_message(chat_id=CHAT_ID, text=f"✔ {name} Response:\n{formatted_response}")
+    for chat_id in active_chats:
+        await bot.send_message(chat_id=chat_id, text=f"✔ {name} Response:\n{formatted_response}")
 
 
 async def countdown(seconds, message):
     """Countdown timer with Telegram notifications."""
     while seconds > 0 and running:
-        await bot.send_message(chat_id=CHAT_ID, text=f"⏳ {message} in {seconds}s...")
+        for chat_id in active_chats:
+            await bot.send_message(chat_id=chat_id, text=f"⏳ {message} in {seconds}s...")
         await asyncio.sleep(10)
         seconds -= 10
-    await bot.send_message(chat_id=CHAT_ID, text="✅ Continuing...")
+    for chat_id in active_chats:
+        await bot.send_message(chat_id=chat_id, text="✅ Continuing...")
 
 
 async def process_loop():
@@ -67,7 +71,8 @@ async def process_loop():
     counter = 1
 
     while running:
-        await bot.send_message(chat_id=CHAT_ID, text=f"🔄 Cycle {counter} Starting...")
+        for chat_id in active_chats:
+            await bot.send_message(chat_id=chat_id, text=f"🔄 Cycle {counter} Starting...")
 
         await send_request("Create New Session", f"{BASE_URL}/createNewSession", {"verificationCode": verification_codes["create"]})
         await countdown(60, "Waiting after Create Session")
@@ -81,8 +86,11 @@ async def process_loop():
 
 
 async def start(update: Update, context: CallbackContext):
-    """Start the process loop."""
+    """Start the process loop and add user to notifications list."""
     global running
+    chat_id = update.message.chat_id
+    active_chats.add(chat_id)  # Store user chat ID
+
     if not running:
         running = True
         asyncio.create_task(process_loop())
@@ -94,12 +102,17 @@ async def start(update: Update, context: CallbackContext):
 async def stop(update: Update, context: CallbackContext):
     """Stop the process loop."""
     global running
+    chat_id = update.message.chat_id
+    active_chats.discard(chat_id)  # Remove user from tracking
     running = False
     await update.message.reply_text("🛑 Bot Stopped!")
 
 
 async def set_verification(update: Update, context: CallbackContext):
     """Set verification codes."""
+    chat_id = update.message.chat_id
+    active_chats.add(chat_id)  # Store user chat ID
+
     if len(context.args) < 2:
         await update.message.reply_text("⚠️ Usage: /setver <create|cycle|end> <code>")
         return
@@ -114,6 +127,8 @@ async def set_verification(update: Update, context: CallbackContext):
 
 async def chkver(update: Update, context: CallbackContext):
     """Check verification codes."""
+    chat_id = update.message.chat_id
+    active_chats.add(chat_id)  # Store user chat ID
     ver_info = "\n".join([f"{key}: {value}" for key, value in verification_codes.items()])
     await update.message.reply_text(f"🔍 Current Verification Codes:\n{ver_info}")
 
@@ -125,8 +140,6 @@ def run_flask():
 
 def main():
     """Main function to start the Telegram bot."""
-    global CHAT_ID
-
     # Create Telegram application
     app = Application.builder().token(TOKEN).build()
 
