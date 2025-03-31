@@ -9,7 +9,7 @@ from telegram import Update, Bot
 from telegram.ext import Application, CommandHandler, CallbackContext
 
 # Telegram Bot Token
-TOKEN = "7881208281:AAFmFi1JgrGPx6jgVB1yPA4E_oWNrK3WZi8"
+TOKEN = "7881208281:AAHVDGWvw5vhMo3FeYkitHnzZ8trEZd1nfE"
 
 # Telegram Chat ID (for updates)
 CHAT_ID = None  # Set this to None so all users can use the bot
