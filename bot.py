@@ -1,11 +1,12 @@
 import requests
+import random
 import json
 import time
 import threading
 import os
 from flask import Flask, request
-from telegram import Update
-from telegram.ext import Application, CommandHandler, CallbackContext
+from telegram import Update, Bot
+from telegram.ext import Updater, CommandHandler, CallbackContext
 
 # ---------------------- CONFIGURATION ----------------------
 
@@ -13,7 +14,7 @@ TOKEN = "7881208281:AAEFwl96PGwKcO2sSuSPES8yAZ4SxC6OrrA"  # Replace with your bo
 BASE_URL = "https://boats-app-cba6ae7713ab.herokuapp.com"
 
 DATA_FILE = "users.json"
-ALLOWED_USERS = ["6735321947", "2120592843"]  # Replace with allowed Telegram user IDs
+ALLOWED_USERS = ["6735321947","2120592843"]  # Replace with allowed Telegram user IDs
 
 # Initialize Flask app (needed for Pydroid)
 app = Flask(__name__)
@@ -36,8 +37,7 @@ users = load_users()
 
 # ---------------------- TELEGRAM BOT FUNCTIONS ----------------------
 
-application = Application.builder().token(TOKEN).build()  # Updated Application initialization
-
+bot = Bot(token=TOKEN)
 running_cycles = {}
 
 def send_request(name, url, data=None, method="POST"):
@@ -82,13 +82,13 @@ def set_verification(update: Update, context: CallbackContext):
         return
 
     if len(context.args) < 2:
-        update.message.reply_text("⚠️ Usage: /setver <create|cycle|end|auth> <code>")
+        update.message.reply_text("⚠️ Usage: /setver <create|cycle|end|auth|status> <code>")
         return
 
     key, value = context.args[0], context.args[1]
 
-    if key not in ["create", "cycle", "end", "auth"]:
-        update.message.reply_text("⚠️ Invalid key! Use: create, cycle, end, or auth.")
+    if key not in ["create", "cycle", "end", "auth", "status"]:
+        update.message.reply_text("⚠️ Invalid key! Use: create, cycle, end, status or auth.")
         return
 
     if user_id not in users:
@@ -104,7 +104,7 @@ def chk_verification(update: Update, context: CallbackContext):
     user_id = str(update.message.chat_id)
 
     if user_id not in users:
-        update.message.reply_text("⚠️ No verification codes set. Use /setver to add.")
+        update.message.reply_text("⚠️ No verification codes or auth set. Use /setver to add.")
         return
 
     codes = users[user_id]
@@ -114,6 +114,7 @@ def chk_verification(update: Update, context: CallbackContext):
         f"🔹 Create: {codes.get('create', 'Not Set')}\n"
         f"🔹 Cycle: {codes.get('cycle', 'Not Set')}\n"
         f"🔹 End: {codes.get('end', 'Not Set')}"
+        f"🔹 Status: {codes.get('status', 'Not Set')}"
     )
 
     update.message.reply_text(message)
@@ -121,20 +122,26 @@ def chk_verification(update: Update, context: CallbackContext):
 def run_cycle(user_id):
     """Loop the cycle request every 30-60 seconds."""
     while running_cycles.get(user_id, False):
+        status_url = f"https://givvy-general-config.herokuapp.com/getStatus"
+        status_data = {"verificationCode": users[user_id]["status"]}
+        status_response = send_request("Get Cycle Ads Reward", status_url, status_data)
+
+        bot.send_message(chat_id=user_id, text=f"✔ Get Status Response:{json.loads(status_response)['statusText']}.")
+        
         reward_url = f"{BASE_URL}/getCycleAdsReward"
         reward_data = {"verificationCode": users[user_id]["cycle"]}
         reward_response = send_request("Get Cycle Ads Reward", reward_url, reward_data)
 
-        application.bot.send_message(chat_id=user_id, text=f"✔ Get Cycle Ads Reward Response:\n{reward_response}")
-        time.sleep(30 + (time.time() % 30))  # Random 30-60s delay
+        bot.send_message(chat_id=user_id, text=f"✔ Get Cycle Ads Reward Response:\n{json.loads(reward_response)['statusText']}\nYou Earned : {json.loads(reward_response)['result']['earnCredits']}.\nUpdated Credits : {json.loads(reward_response)['result']['credits']}.\nUSD : {json.loads(reward_response)['result']['userBalance']}$.")
+        time.sleep(10 + random.uniform(0, 5))  # Random 10-15s delay
 
-    application.bot.send_message(chat_id=user_id, text="🛑 Cycle stopped.")
+    bot.send_message(chat_id=user_id, text="🛑 Cycle stopped.")
 
 def process_cycle(update: Update, context: CallbackContext):
     """Start the cycle for the user."""
     user_id = str(update.message.chat_id)
 
-    if user_id not in users or "create" not in users[user_id] or "cycle" not in users[user_id] or "end" not in users[user_id]:
+    if user_id not in users or "create" not in users[user_id] or "cycle" not in users[user_id] or "end" not in users[user_id] or "auth" not in users[user_id] or "status" not in users[user_id]:
         update.message.reply_text("⚠️ Set verification codes first using /setver")
         return
 
@@ -148,7 +155,8 @@ def process_cycle(update: Update, context: CallbackContext):
     create_url = f"{BASE_URL}/createNewSession"
     create_data = {"verificationCode": users[user_id]["create"]}
     create_response = send_request("Create New Session", create_url, create_data)
-    application.bot.send_message(chat_id=user_id, text=f"✔ Create New Session Response:\n{create_response}")
+    
+    bot.send_message(chat_id=user_id, text=f"✔ Create New Session Response:\n{json.loads(create_response)['statusText']}")
 
     # Start looping for Cycle Reward
     running_cycles[user_id] = True
@@ -171,39 +179,29 @@ def kill_cycle(update: Update, context: CallbackContext):
     end_url = f"{BASE_URL}/endActiveSession"
     end_data = {"verificationCode": users[user_id]["end"]}
     end_response = send_request("End Session", end_url, end_data)
-    application.bot.send_message(chat_id=user_id, text=f"✔ End Session Response:\n{end_response}")
+    bot.send_message(chat_id=user_id, text=f"✔ End Session Response:\n{json.loads(end_response)['statusText']}.\nStatus : {json.loads(end_response)['result']['status']}.\nTotalFocusedTime : {json.loads(end_response)['result']['totalFocusedTimeInSec']} seconds.\nTotal Earned : {json.loads(end_response)['result']['currentEarningsData']['earningInCredits']}.")
 
     update.message.reply_text("✅ Cycle stopped successfully!")
-
-# ---------------------- FLASK WEBHOOK ----------------------
-
-@app.route('/jhai/bot.py', methods=['POST'])
-def telegram_webhook():
-    """Handle the incoming webhook request from Telegram."""
-    print("Webhook request received")  # Log the incoming request
-    try:
-        json_str = request.get_data().decode('UTF-8')
-        update = Update.de_json(json.loads(json_str), application.bot)
-        application.dispatcher.process_update(update)
-        return 'OK', 200
-    except Exception as e:
-        print(f"Error: {e}")
-        return 'Error', 500
 
 # ---------------------- TELEGRAM BOT INITIALIZATION ----------------------
 
 def main():
     """Start the bot."""
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("setver", set_verification))
-    application.add_handler(CommandHandler("chkver", chk_verification))
-    application.add_handler(CommandHandler("run", process_cycle))
-    application.add_handler(CommandHandler("kill", kill_cycle))
+    updater = Updater(TOKEN, use_context=True)
+    dp = updater.dispatcher
 
-    application.run_polling()
+    dp.add_handler(CommandHandler("start", start))
+    dp.add_handler(CommandHandler("setver", set_verification))
+    dp.add_handler(CommandHandler("chkver", chk_verification))
+    dp.add_handler(CommandHandler("run", process_cycle))
+    dp.add_handler(CommandHandler("kill", kill_cycle))
+
+    updater.start_polling()
+    updater.idle()
 
 # ---------------------- RUN SCRIPT ----------------------
 
 if __name__ == "__main__":
     threading.Thread(target=main).start()
-    app.run(host="0.0.0.0", port=5000)
+    app.run(host="0.0.0.0", port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
