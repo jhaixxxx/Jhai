@@ -6,30 +6,34 @@ import threading
 import os
 from flask import Flask, request
 from telegram import Update, Bot
-from telegram.ext import Updater, CommandHandler, CallbackContext
+from telegram.ext import Dispatcher, CommandHandler, CallbackContext
 
 # ---------------------- CONFIGURATION ----------------------
 
-TOKEN = "7881208281:AAEFwl96PGwKcO2sSuSPES8yAZ4SxC6OrrA"  # Replace with your bot token
+TOKEN = os.getenv("7881208281:AAGR8DAaGV2s2AvyquL95h90ZMVPB11Q8RM")  # Use Railway environment variable
 BASE_URL = "https://boats-app-cba6ae7713ab.herokuapp.com"
+RAILWAY_URL = os.getenv("https://web-production-b9df3.up.railway.app/bot.py")  # Your Railway app’s public URL
 
 DATA_FILE = "users.json"
-ALLOWED_USERS = ["6735321947","2120592843"]  # Replace with allowed Telegram user IDs
+ALLOWED_USERS = ["6735321947", "2120592843"]  # Replace with allowed Telegram user IDs
 
-# Initialize Flask app (needed for Pydroid)
+# Initialize Flask app
 app = Flask(__name__)
+
+# Initialize Telegram Bot
+bot = Bot(token=TOKEN)
+dispatcher = Dispatcher(bot, None, use_context=True)
+running_cycles = {}
 
 # ---------------------- LOAD & SAVE USER DATA ----------------------
 
 def load_users():
-    """Load user data from JSON file."""
     if not os.path.exists(DATA_FILE):
         return {}
     with open(DATA_FILE, "r") as f:
         return json.load(f)
 
 def save_users(users):
-    """Save user data to JSON file."""
     with open(DATA_FILE, "w") as f:
         json.dump(users, f, indent=4)
 
@@ -37,48 +41,35 @@ users = load_users()
 
 # ---------------------- TELEGRAM BOT FUNCTIONS ----------------------
 
-bot = Bot(token=TOKEN)
-running_cycles = {}
-
 def send_request(name, url, data=None, method="POST"):
-    """Send API request and notify user."""
     session = requests.Session()
-
-    if method == "POST":
-        headers = {
-            "currency": "USD",
-            "Connection": "close",
-            "rentappsetup": "true",
-            "version": "2.7",
-            "language": "English",
-            "packageName": "com.boat.app.adventure",
-            "versionCode": "27",
-            "storeType": "google_play",
-            "authcode": data.get("auth", ""),
-            "Content-Type": "application/json; charset=utf-8",
-            "Accept-Encoding": "gzip",
-            "User-Agent": "okhttp/5.0.0-alpha.14"
-        }
-        response = session.post(url, headers=headers, json=data)
-    else:
-        response = session.get(url)
-
+    headers = {
+        "currency": "USD",
+        "Connection": "close",
+        "rentappsetup": "true",
+        "version": "2.7",
+        "language": "English",
+        "packageName": "com.boat.app.adventure",
+        "versionCode": "27",
+        "storeType": "google_play",
+        "authcode": data.get("auth", ""),
+        "Content-Type": "application/json; charset=utf-8",
+        "Accept-Encoding": "gzip",
+        "User-Agent": "okhttp/5.0.0-alpha.14"
+    }
+    response = session.post(url, headers=headers, json=data) if method == "POST" else session.get(url)
     try:
-        response_json = response.json()
-        return json.dumps(response_json, indent=4)
+        return json.dumps(response.json(), indent=4)
     except json.JSONDecodeError:
         return response.text
 
 def start(update: Update, context: CallbackContext):
-    """Start the bot."""
     update.message.reply_text("✅ Welcome! Use /setver to set your verification codes.")
 
 def set_verification(update: Update, context: CallbackContext):
-    """Set user-specific verification codes (restricted access)."""
     user_id = str(update.message.chat_id)
-
     if user_id not in ALLOWED_USERS:
-        update.message.reply_text("❌ You are not authorized to use this command.\nContact : @urJOSH911")
+        update.message.reply_text("❌ You are not authorized.")
         return
 
     if len(context.args) < 2:
@@ -86,25 +77,18 @@ def set_verification(update: Update, context: CallbackContext):
         return
 
     key, value = context.args[0], context.args[1]
-
     if key not in ["create", "cycle", "end", "auth", "status"]:
-        update.message.reply_text("⚠️ Invalid key! Use: create, cycle, end, status or auth.")
+        update.message.reply_text("⚠️ Invalid key! Use: create, cycle, end, auth, status.")
         return
 
-    if user_id not in users:
-        users[user_id] = {}
-
-    users[user_id][key] = value
+    users.setdefault(user_id, {})[key] = value
     save_users(users)
-
     update.message.reply_text(f"✅ Updated {key} verification code!")
 
 def chk_verification(update: Update, context: CallbackContext):
-    """Check saved verification codes for the user."""
     user_id = str(update.message.chat_id)
-
     if user_id not in users:
-        update.message.reply_text("⚠️ No verification codes or auth set. Use /setver to add.")
+        update.message.reply_text("⚠️ No verification codes found. Use /setver to add.")
         return
 
     codes = users[user_id]
@@ -113,94 +97,75 @@ def chk_verification(update: Update, context: CallbackContext):
         f"✅ Your verification codes:\n"
         f"🔹 Create: {codes.get('create', 'Not Set')}\n"
         f"🔹 Cycle: {codes.get('cycle', 'Not Set')}\n"
-        f"🔹 End: {codes.get('end', 'Not Set')}"
+        f"🔹 End: {codes.get('end', 'Not Set')}\n"
         f"🔹 Status: {codes.get('status', 'Not Set')}"
     )
-
     update.message.reply_text(message)
 
 def run_cycle(user_id):
-    """Loop the cycle request every 30-60 seconds."""
     while running_cycles.get(user_id, False):
-        status_url = f"https://givvy-general-config.herokuapp.com/getStatus"
+        status_url = "https://givvy-general-config.herokuapp.com/getStatus"
         status_data = {"verificationCode": users[user_id]["status"]}
-        status_response = send_request("Get Cycle Ads Reward", status_url, status_data)
+        status_response = send_request("Get Status", status_url, status_data)
+        bot.send_message(chat_id=user_id, text=f"✔ Get Status Response: {json.loads(status_response)['statusText']}.")
 
-        bot.send_message(chat_id=user_id, text=f"✔ Get Status Response:{json.loads(status_response)['statusText']}.")
-        
         reward_url = f"{BASE_URL}/getCycleAdsReward"
         reward_data = {"verificationCode": users[user_id]["cycle"]}
         reward_response = send_request("Get Cycle Ads Reward", reward_url, reward_data)
-
-        bot.send_message(chat_id=user_id, text=f"✔ Get Cycle Ads Reward Response:\n{json.loads(reward_response)['statusText']}\nYou Earned : {json.loads(reward_response)['result']['earnCredits']}.\nUpdated Credits : {json.loads(reward_response)['result']['credits']}.\nUSD : {json.loads(reward_response)['result']['userBalance']}$.")
-        time.sleep(10 + random.uniform(0, 5))  # Random 10-15s delay
+        bot.send_message(chat_id=user_id, text=f"✔ Get Cycle Ads Reward Response:\n{json.loads(reward_response)['statusText']}.\nYou Earned: {json.loads(reward_response)['result']['earnCredits']}.\nUpdated Credits: {json.loads(reward_response)['result']['credits']}.\nUSD: {json.loads(reward_response)['result']['userBalance']}$.")
+        
+        time.sleep(10 + random.uniform(0, 5))
 
     bot.send_message(chat_id=user_id, text="🛑 Cycle stopped.")
 
 def process_cycle(update: Update, context: CallbackContext):
-    """Start the cycle for the user."""
     user_id = str(update.message.chat_id)
-
-    if user_id not in users or "create" not in users[user_id] or "cycle" not in users[user_id] or "end" not in users[user_id] or "auth" not in users[user_id] or "status" not in users[user_id]:
+    if user_id not in users or not all(k in users[user_id] for k in ["create", "cycle", "end", "auth", "status"]):
         update.message.reply_text("⚠️ Set verification codes first using /setver")
         return
 
-    if user_id in running_cycles and running_cycles[user_id]:
+    if running_cycles.get(user_id, False):
         update.message.reply_text("⚠️ A cycle is already running!")
         return
 
     update.message.reply_text("🔄 Starting process...")
-
-    # Step 1: Create New Session
     create_url = f"{BASE_URL}/createNewSession"
     create_data = {"verificationCode": users[user_id]["create"]}
     create_response = send_request("Create New Session", create_url, create_data)
-    
     bot.send_message(chat_id=user_id, text=f"✔ Create New Session Response:\n{json.loads(create_response)['statusText']}")
 
-    # Start looping for Cycle Reward
     running_cycles[user_id] = True
-    thread = threading.Thread(target=run_cycle, args=(user_id,))
-    thread.start()
+    threading.Thread(target=run_cycle, args=(user_id,)).start()
 
 def kill_cycle(update: Update, context: CallbackContext):
-    """Stop the cycle and end session."""
     user_id = str(update.message.chat_id)
-
-    if user_id not in running_cycles or not running_cycles[user_id]:
+    if not running_cycles.get(user_id, False):
         update.message.reply_text("⚠️ No active cycle to stop.")
         return
 
     update.message.reply_text("🛑 Stopping cycle...")
-
     running_cycles[user_id] = False
 
-    # Step 3: End Session
-    end_url = f"{BASE_URL}/endActiveSession"
-    end_data = {"verificationCode": users[user_id]["end"]}
-    end_response = send_request("End Session", end_url, end_data)
-    bot.send_message(chat_id=user_id, text=f"✔ End Session Response:\n{json.loads(end_response)['statusText']}.\nStatus : {json.loads(end_response)['result']['status']}.\nTotalFocusedTime : {json.loads(end_response)['result']['totalFocusedTimeInSec']} seconds.\nTotal Earned : {json.loads(end_response)['result']['currentEarningsData']['earningInCredits']}.")
+@app.route(f"/{TOKEN}", methods=["POST"])
+def webhook():
+    update = Update.de_json(request.get_json(), bot)
+    dispatcher.process_update(update)
+    return "OK", 200
 
-    update.message.reply_text("✅ Cycle stopped successfully!")
-
-# ---------------------- TELEGRAM BOT INITIALIZATION ----------------------
+def set_webhook():
+    webhook_url = f"{RAILWAY_URL}/{TOKEN}"
+    bot.setWebhook(webhook_url)
+    print(f"Webhook set to {webhook_url}")
 
 def main():
-    """Start the bot."""
-    updater = Updater(TOKEN, use_context=True)
-    dp = updater.dispatcher
+    dispatcher.add_handler(CommandHandler("start", start))
+    dispatcher.add_handler(CommandHandler("setver", set_verification))
+    dispatcher.add_handler(CommandHandler("chkver", chk_verification))
+    dispatcher.add_handler(CommandHandler("run", process_cycle))
+    dispatcher.add_handler(CommandHandler("kill", kill_cycle))
 
-    dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(CommandHandler("setver", set_verification))
-    dp.add_handler(CommandHandler("chkver", chk_verification))
-    dp.add_handler(CommandHandler("run", process_cycle))
-    dp.add_handler(CommandHandler("kill", kill_cycle))
-
-    updater.start_polling()
-    updater.idle()
-
-# ---------------------- RUN SCRIPT ----------------------
+    set_webhook()
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
 
 if __name__ == "__main__":
-    threading.Thread(target=main).start()
-    app.run(host="0.0.0.0", port = int(os.environ.get("PORT", 5000)))
+    main()
