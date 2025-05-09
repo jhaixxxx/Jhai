@@ -1,6 +1,6 @@
 Device list
-d074e611-e2e1-4079-9dba-ff45a56086de
-d034c8e9-c9e6-4f07-9723-f7e7cc7203ab
-e62299de-605b-428d-b961-98fbff7cc095
-0cdbc2f7-ad1a-4531-95dd-1f1ec8d7cf8b
-260b69f1-c00e-4d1a-9ec1-fa22d30300f7
+d074e611-ea-ff45a56086de
+d3ab
+d-b961-98fbff7cc095
+d-1f1ec8d7cf8b
+260b
