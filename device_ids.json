@@ -1,7 +1,4 @@
-{
-    "authorized_devices": [
-        "d034c8e9-c9e6-4f07-9723-f7e7cc7203ab",
-        "device_id_2",
-        "device_id_3"
-    ]
-}
+[
+  "d034c8e9-c9e6-4f07-9723-f7e7cc7203ab",
+  "abcdef12-3456-7890-abcd-ef1234567890"
+]
